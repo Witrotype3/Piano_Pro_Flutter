@@ -1,0 +1,33 @@
+name: connect_to_go_server_flutter
+description: A new Flutter project.
+
+publish_to: 'none' # Remove this line if you're publishing the app
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"  # Adjust this based on your Flutter SDK version
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  http: ^0.13.0
+  lottie: ^3.0.0
+  provider: ^6.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Bravura
+      fonts:
+        - asset: assets/fonts/Bravura.otf
+
+
+  assets:
+    - assets/images/
+    - assets/lotties/
