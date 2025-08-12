@@ -1,9 +1,10 @@
-import 'package:connect_to_go_server_flutter/constants/theme.dart';
-import 'package:connect_to_go_server_flutter/screens/all_notes_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:connect_to_go_server_flutter/core/theme/app_theme.dart';
+import 'package:connect_to_go_server_flutter/core/constants/app_constants.dart';
+import 'package:connect_to_go_server_flutter/features/lessons/presentation/screens/all_notes_screen.dart';
 
-class LessonsPage extends StatelessWidget {
-  const LessonsPage({super.key});
+class LessonsScreen extends StatelessWidget {
+  const LessonsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -36,31 +37,41 @@ class LessonsPage extends StatelessWidget {
         child: SingleChildScrollView(
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: 800),
+              constraints: const BoxConstraints(maxWidth: AppConstants.maxCardWidth),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   int crossAxisCount = (constraints.maxWidth / 250).floor();
                   crossAxisCount = crossAxisCount.clamp(1, 3);
+                  
+                  double availableWidth = constraints.maxWidth - (AppConstants.cardSpacing * (crossAxisCount - 1));
+                  double cardWidth = (availableWidth / crossAxisCount).clamp(0.0, 250.0);
+                  
+                  double totalCardsWidth = (cardWidth * crossAxisCount) + (AppConstants.cardSpacing * (crossAxisCount - 1));
+                  
+                  double horizontalPadding = (constraints.maxWidth - totalCardsWidth) / 2;
 
-                  return GridView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      childAspectRatio: 1.0,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: AppConstants.cardAspectRatio,
+                        crossAxisSpacing: AppConstants.cardSpacing,
+                        mainAxisSpacing: AppConstants.cardSpacing,
+                      ),
+                      itemCount: lessons.length,
+                      itemBuilder: (context, index) {
+                        final lesson = lessons[index];
+                        return lessonCard(
+                            context,
+                            lesson['title']!,
+                            lesson['image']!,
+                            lesson['icon'] as IconData,
+                            brightness);
+                      },
                     ),
-                    itemCount: lessons.length,
-                    itemBuilder: (context, index) {
-                      final lesson = lessons[index];
-                      return lessonCard(
-                          context,
-                          lesson['title']!,
-                          lesson['image']!,
-                          lesson['icon'] as IconData,
-                          brightness);
-                    },
                   );
                 },
               ),
@@ -71,7 +82,7 @@ class LessonsPage extends StatelessWidget {
     );
   }
 
-    Widget lessonCard(BuildContext context, String title, String imageName,
+  Widget lessonCard(BuildContext context, String title, String imageName,
       IconData icon, Brightness brightness) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -88,7 +99,7 @@ class LessonsPage extends StatelessWidget {
               Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => AllNotesScreen(),
+                    builder: (context) => const AllNotesScreen(),
                   ));
             },
             borderRadius: BorderRadius.circular(12),
@@ -134,4 +145,4 @@ class LessonsPage extends StatelessWidget {
       },
     );
   }
-}
+} 

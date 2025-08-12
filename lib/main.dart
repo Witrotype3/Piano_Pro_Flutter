@@ -1,32 +1,15 @@
-import 'package:connect_to_go_server_flutter/constants/theme.dart';
-import 'package:connect_to_go_server_flutter/data/notifiers.dart';
-import 'package:connect_to_go_server_flutter/screens/welcome_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:connect_to_go_server_flutter/core/app.dart';
+import 'package:connect_to_go_server_flutter/core/state/theme_provider.dart';
 
 void main() {
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
-      child: MyApp(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      ],
+      child: const App(),
     ),
   );
-}
-
-class MyApp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'Piano Pro',
-          home: WelcomePage(),
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: themeProvider.themeMode,
-        );
-      },
-    );
-  }
 }

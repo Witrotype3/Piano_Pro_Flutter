@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:connect_to_go_server_flutter/constants/theme.dart';
+import 'package:connect_to_go_server_flutter/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -139,13 +139,16 @@ class _AllNotesPageState extends State<AllNotesPage> {
                 const SizedBox(height: 40),
                 AspectRatio(
                   aspectRatio: 2.5,
-                  child: CustomPaint(
-                    painter: StaffPainter(
-                      note: _currentNote,
-                      noteColor: AppTheme.getThemeSelectedTextColor(brightness),
-                      lineColor: AppTheme.getThemeTextColor(brightness),
+                  child: Container(
+                    color: Colors.white,
+                    child: CustomPaint(
+                      painter: StaffPainter(
+                        note: _currentNote,
+                        noteColor: AppTheme.getThemeSelectedTextColor(brightness),
+                        lineColor: Colors.black,
+                      ),
+                      size: Size.infinite,
                     ),
-                    size: Size.infinite,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -175,8 +178,8 @@ class _AllNotesPageState extends State<AllNotesPage> {
                     return ElevatedButton(
                       onPressed: () => _handleButtonPress(note),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.themeColor,
-                        foregroundColor: AppTheme.themeTextColor,
+                        backgroundColor: AppTheme.getThemeColor(brightness),
+                        foregroundColor: AppTheme.getThemeTextColor(brightness),
                       ),
                       child: Text(note),
                     );

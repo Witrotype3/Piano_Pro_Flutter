@@ -3,24 +3,49 @@ import 'package:flutter/material.dart';
 import 'package:connect_to_go_server_flutter/constants/staff_config.dart';
 import '../models/note_model.dart';
 
+class StaffPainterWidget extends StatelessWidget {
+  final Note currentNote;
+  final Note previousNote;
+  final Animation<double> slideAnimation;
+
+  const StaffPainterWidget({
+    super.key,
+    required this.currentNote,
+    required this.previousNote,
+    required this.slideAnimation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+
+    return AnimatedBuilder(
+      animation: slideAnimation,
+      builder: (context, child) {
+        return CustomPaint(
+          painter: StaffPainter(
+            note: currentNote,
+          ),
+          child: Container(),
+        );
+      },
+    );
+  }
+}
+
 class StaffPainter extends CustomPainter {
   final Note note;
-  final Color noteColor;
-  final Color lineColor;
 
   StaffPainter({
     required this.note,
-    required this.noteColor,
-    required this.lineColor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
-      ..color = lineColor
+      ..color = Colors.black
       ..strokeWidth = 1.5;
 
-    final staffHeight = (lineCount - 1) * lineSpacing;
+    const staffHeight = (lineCount - 1) * lineSpacing;
     final staffCenterY = size.height / 2;
     final staffTopY = staffCenterY - staffHeight / 2;
 
@@ -29,11 +54,11 @@ class StaffPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
     }
 
-    final clefFontSize = staffHeight * 1;
-    final clefSpan = TextSpan(
+    const clefFontSize = staffHeight * 1;
+    const clefSpan = TextSpan(
       text: '\uE050', // SMuFL G clef (U+E050)
       style: TextStyle(
-        color: lineColor,
+        color: Colors.black,
         fontSize: clefFontSize,
         fontFamily: 'Bravura',
       ),
@@ -53,10 +78,10 @@ class StaffPainter extends CustomPainter {
       Offset(size.width * 0.05, clefOffsetY),
     );
 
-    final notePaint = Paint()..color = noteColor;
-    final noteRadiusX = lineSpacing * 0.6;
-    final noteRadiusY = lineSpacing * 0.4;
-    final noteStemHeight = lineSpacing * 3.5;
+    final notePaint = Paint()..color = Colors.black;
+    const noteRadiusX = lineSpacing * 0.6;
+    const noteRadiusY = lineSpacing * 0.4;
+    const noteStemHeight = lineSpacing * 3.5;
 
     final noteCenterY =
         staffTopY + (8 - note.staffPosition) * (lineSpacing / 2);
@@ -77,10 +102,10 @@ class StaffPainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(noteCenterX, noteCenterY);
-    final rotationAngle = -15 * pi / 180;
+    const rotationAngle = -15 * pi / 180;
     canvas.rotate(rotationAngle);
     final noteRect = Rect.fromCenter(
-      center: Offset(0, 0),
+      center: const Offset(0, 0),
       width: noteRadiusX * 2,
       height: noteRadiusY * 2,
     );
@@ -103,8 +128,6 @@ class StaffPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant StaffPainter oldDelegate) {
-    return oldDelegate.note != note ||
-        oldDelegate.noteColor != noteColor ||
-        oldDelegate.lineColor != lineColor;
+    return oldDelegate.note != note;
   }
 }
