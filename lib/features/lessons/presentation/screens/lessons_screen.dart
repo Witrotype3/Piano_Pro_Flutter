@@ -91,7 +91,7 @@ class LessonsScreen extends StatelessWidget {
         double iconSize = (cardWidth * 0.06).clamp(16.0, 24.0);
         
         return Card(
-          color: AppTheme.getThemeColor(brightness),
+          color: Colors.white,
           elevation: 4,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: InkWell(
@@ -122,7 +122,7 @@ class LessonsScreen extends StatelessWidget {
                         child: Text(
                           title,
                           style: TextStyle(
-                            color: AppTheme.getThemeTextColor(brightness),
+                            color: Colors.black87,
                             fontWeight: FontWeight.bold,
                             fontSize: fontSize,
                           ),
@@ -132,7 +132,7 @@ class LessonsScreen extends StatelessWidget {
                       const SizedBox(width: 6),
                       Icon(
                         icon,
-                        color: AppTheme.getThemeTextColor(brightness),
+                        color: Colors.black87,
                         size: iconSize,
                       ),
                     ],
