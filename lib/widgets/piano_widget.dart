@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:connect_to_go_server_flutter/widgets/custom_scrollbar.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'dart:async';
 
 class PianoWidget extends StatefulWidget {
   final Function(String note)? onNotePressed;
@@ -13,8 +14,7 @@ class PianoWidget extends StatefulWidget {
   final double maxKeyWidth;
   final bool showControls;
   final double keyAspectRatio;
-  final Function(double keyWidth)?
-      onKeyWidthChanged;
+  final Function(double keyWidth)? onKeyWidthChanged;
   final bool enableAudio;
   final double audioVolume;
 
@@ -41,12 +41,16 @@ class PianoWidget extends StatefulWidget {
 
 class _PianoWidgetState extends State<PianoWidget> {
   final Set<String> _pressedKeys = {};
+  final Map<String, DateTime> _playingKeys = {};
+  final Map<String, AudioPlayer> _audioPlayers = {};
+  final Map<String, String> _audioFilenameCache = {};
+  
   double _currentKeyWidth = 40;
   final ScrollController _pianoScrollController = ScrollController();
   final ScrollController _scrollBarController = ScrollController();
   bool _isSyncingScroll = false;
-  final Map<String, AudioPlayer> _audioPlayers = {};
-  final Map<String, bool> _fadeOutTasks = {};
+  Timer? _cleanupTimer;
+  bool _needsRebuild = false;
 
   static const List<String> whiteKeys = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
   static const List<String> blackKeys = ['C#', 'D#', 'F#', 'G#', 'A#'];
@@ -80,42 +84,123 @@ class _PianoWidgetState extends State<PianoWidget> {
 
   double get _currentKeyHeight => _currentKeyWidth * widget.keyAspectRatio;
 
-  Future<void> _playNote(String note) async {
-    if (!widget.enableAudio) return;
+  void _initializeAudioCache() {
+    if (_audioFilenameCache.isNotEmpty) return;
+    
+    final enharmonicMap = {
+      'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb',
+    };
 
-    _fadeOutTasks[note] = false;
+    for (final note in allKeys) {
+      String noteName = note.substring(0, note.length - 1);
+      String octave = note.substring(note.length - 1);
+      if (enharmonicMap.containsKey(noteName)) {
+        noteName = enharmonicMap[noteName]!;
+      }
+      _audioFilenameCache[note] = '$noteName$octave.wav';
+    }
+    
+    for (final note in allBlackKeys) {
+      String noteName = note.substring(0, note.length - 1);
+      String octave = note.substring(note.length - 1);
+      if (enharmonicMap.containsKey(noteName)) {
+        noteName = enharmonicMap[noteName]!;
+      }
+      _audioFilenameCache[note] = '$noteName$octave.wav';
+    }
+  }
+
+  void _playNote(String note) {
+    if (!widget.enableAudio) return;
+    _stopNote(note);
 
     try {
-      String filename = _getAudioFilename(note);
-
-      final newAudioPlayer = AudioPlayer();
-      final uniqueKey = '${note}_${DateTime.now().millisecondsSinceEpoch}';
-      _audioPlayers[uniqueKey] = newAudioPlayer;
-
-      await newAudioPlayer.setVolume(1.0);
-      await newAudioPlayer.play(AssetSource('audio/keys/$filename'));
+      final filename = _audioFilenameCache[note] ?? _getAudioFilename(note);
+      final audioPlayer = AudioPlayer();
+      _audioPlayers[note] = audioPlayer;
+      audioPlayer.setVolume(widget.audioVolume);
+      audioPlayer.play(AssetSource('audio/keys/$filename'));
     } catch (e) {
       debugPrint('Error playing note $note: $e');
     }
   }
 
+  void _stopNote(String note) {
+    final audioPlayer = _audioPlayers[note];
+    if (audioPlayer != null) {
+      audioPlayer.stop();
+      audioPlayer.dispose();
+      _audioPlayers.remove(note);
+    }
+  }
+
+  void _fadeOutNote(String note) {
+    final audioPlayer = _audioPlayers[note];
+    if (audioPlayer == null) return;
+    _fadeOutNoteAsync(audioPlayer, note);
+  }
+
+  Future<void> _fadeOutNoteAsync(AudioPlayer audioPlayer, String note) async {
+    try {
+      const fadeDuration = Duration(milliseconds: 1000);
+      const steps = 20;
+      final stepDuration = fadeDuration.inMilliseconds ~/ steps;
+      final volumeStep = widget.audioVolume / steps;
+
+      for (int i = 0; i < steps; i++) {
+        if (!_playingKeys.containsKey(note)) break;
+        await Future.delayed(Duration(milliseconds: stepDuration));
+        final newVolume = widget.audioVolume - (volumeStep * (i + 1));
+        if (newVolume > 0) {
+          await audioPlayer.setVolume(newVolume);
+        } else {
+          await audioPlayer.stop();
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fading out note $note: $e');
+    }
+  }
+
   String _getAudioFilename(String note) {
     Map<String, String> enharmonicMap = {
-      'C#': 'Db',
-      'D#': 'Eb',
-      'F#': 'Gb',
-      'G#': 'Ab',
-      'A#': 'Bb',
+      'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb',
     };
-
     String noteName = note.substring(0, note.length - 1);
     String octave = note.substring(note.length - 1);
-
     if (enharmonicMap.containsKey(noteName)) {
       noteName = enharmonicMap[noteName]!;
     }
-
     return '$noteName$octave.wav';
+  }
+
+  void _cleanupExpiredKeys() {
+    final now = DateTime.now();
+    final expiredNotes = <String>[];
+    for (final entry in _playingKeys.entries) {
+      if (now.difference(entry.value).inSeconds >= 2) {
+        expiredNotes.add(entry.key);
+      }
+    }
+    if (expiredNotes.isNotEmpty) {
+      for (final note in expiredNotes) {
+        _stopNote(note);
+        _playingKeys.remove(note);
+      }
+    }
+  }
+
+  void _scheduleRebuild() {
+    if (!_needsRebuild) {
+      _needsRebuild = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_needsRebuild && mounted) {
+          setState(() {});
+          _needsRebuild = false;
+        }
+      });
+    }
   }
 
   @override
@@ -123,13 +208,14 @@ class _PianoWidgetState extends State<PianoWidget> {
     super.initState();
     _currentKeyWidth = widget.keyWidth;
     widget.onKeyWidthChanged?.call(_currentKeyWidth);
+    _initializeAudioCache();
+    _cleanupTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _cleanupExpiredKeys();
+    });
 
     _pianoScrollController.addListener(() {
       if (_isSyncingScroll) return;
-      if (!_scrollBarController.hasClients ||
-          !_pianoScrollController.hasClients) {
-        return;
-      }
+      if (!_scrollBarController.hasClients || !_pianoScrollController.hasClients) return;
       _isSyncingScroll = true;
       try {
         final double target = _pianoScrollController.position.pixels;
@@ -142,10 +228,7 @@ class _PianoWidgetState extends State<PianoWidget> {
 
     _scrollBarController.addListener(() {
       if (_isSyncingScroll) return;
-      if (!_scrollBarController.hasClients ||
-          !_pianoScrollController.hasClients) {
-        return;
-      }
+      if (!_scrollBarController.hasClients || !_pianoScrollController.hasClients) return;
       _isSyncingScroll = true;
       try {
         final double target = _scrollBarController.position.pixels;
@@ -159,6 +242,7 @@ class _PianoWidgetState extends State<PianoWidget> {
 
   @override
   void dispose() {
+    _cleanupTimer?.cancel();
     _pianoScrollController.dispose();
     _scrollBarController.dispose();
     for (final audioPlayer in _audioPlayers.values) {
@@ -170,16 +254,14 @@ class _PianoWidgetState extends State<PianoWidget> {
 
   void _zoomIn() {
     setState(() {
-      _currentKeyWidth =
-          (_currentKeyWidth + 5).clamp(widget.minKeyWidth, widget.maxKeyWidth);
+      _currentKeyWidth = (_currentKeyWidth + 5).clamp(widget.minKeyWidth, widget.maxKeyWidth);
     });
     widget.onKeyWidthChanged?.call(_currentKeyWidth);
   }
 
   void _zoomOut() {
     setState(() {
-      _currentKeyWidth =
-          (_currentKeyWidth - 5).clamp(widget.minKeyWidth, widget.maxKeyWidth);
+      _currentKeyWidth = (_currentKeyWidth - 5).clamp(widget.minKeyWidth, widget.maxKeyWidth);
     });
     widget.onKeyWidthChanged?.call(_currentKeyWidth);
   }
@@ -188,14 +270,30 @@ class _PianoWidgetState extends State<PianoWidget> {
     int middleCIndex = allKeys.indexOf('C4');
     if (middleCIndex != -1) {
       double targetOffset = middleCIndex * (_currentKeyWidth + 2) -
-          (MediaQuery.of(context).size.width / 2) +
-          (_currentKeyWidth / 2);
+          (MediaQuery.of(context).size.width / 2) + (_currentKeyWidth / 2);
       _pianoScrollController.animateTo(
         targetOffset.clamp(0, _pianoScrollController.position.maxScrollExtent),
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  void _onKeyPressed(String note) {
+    _stopNote(note);
+    _playingKeys.remove(note);
+    _pressedKeys.add(note);
+    _playNote(note);
+    _scheduleRebuild();
+    widget.onNotePressed?.call(note);
+  }
+
+  void _onKeyReleased(String note) {
+    _pressedKeys.remove(note);
+    _playingKeys[note] = DateTime.now();
+    _fadeOutNote(note);
+    _scheduleRebuild();
+    widget.onNoteReleased?.call(note);
   }
 
   @override
@@ -209,18 +307,21 @@ class _PianoWidgetState extends State<PianoWidget> {
           children: [
             IconButton(
               onPressed: _zoomOut,
-              icon: const Icon(Icons.zoom_out),
+              icon: Icon(Icons.zoom_out, color: Theme.of(context).colorScheme.onSurface),
               tooltip: 'Zoom Out',
             ),
-            Text('${_currentKeyWidth.toInt()}px'),
+            Text('${_currentKeyWidth.toInt()}px', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
             IconButton(
               onPressed: _zoomIn,
-              icon: const Icon(Icons.zoom_in),
+              icon: Icon(Icons.zoom_in, color: Theme.of(context).colorScheme.onSurface),
               tooltip: 'Zoom In',
             ),
             const SizedBox(width: 20),
             ElevatedButton(
               onPressed: _scrollToMiddleC,
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
+              ),
               child: const Text('Go to Middle C'),
             ),
           ],
@@ -245,8 +346,7 @@ class _PianoWidgetState extends State<PianoWidget> {
                     Row(
                       children: allKeys.map((note) {
                         bool isPressed = _pressedKeys.contains(note);
-                        bool isHighlighted =
-                            widget.highlightedKeys?.contains(note) ?? false;
+                        bool isHighlighted = widget.highlightedKeys?.contains(note) ?? false;
                         bool isMiddleC = note == 'C4';
 
                         return GestureDetector(
@@ -266,18 +366,12 @@ class _PianoWidgetState extends State<PianoWidget> {
                                           ? Colors.green.shade100
                                           : Colors.white,
                               border: Border.all(
-                                color: isMiddleC
-                                    ? Colors.green
-                                    : Colors.grey.shade400,
-                                width: isMiddleC
-                                    ? _currentKeyWidth * 0.05
-                                    : _currentKeyWidth * 0.025,
+                                color: isMiddleC ? Colors.green : Colors.grey.shade400,
+                                width: isMiddleC ? _currentKeyWidth * 0.05 : _currentKeyWidth * 0.025,
                               ),
                               borderRadius: BorderRadius.only(
-                                bottomLeft:
-                                    Radius.circular(_currentKeyWidth * 0.1),
-                                bottomRight:
-                                    Radius.circular(_currentKeyWidth * 0.1),
+                                bottomLeft: Radius.circular(_currentKeyWidth * 0.1),
+                                bottomRight: Radius.circular(_currentKeyWidth * 0.1),
                               ),
                             ),
                             child: widget.showNoteLabels
@@ -286,9 +380,7 @@ class _PianoWidgetState extends State<PianoWidget> {
                                       note,
                                       style: TextStyle(
                                         fontSize: _currentKeyWidth * 0.2,
-                                        color: isMiddleC
-                                            ? Colors.green.shade700
-                                            : Colors.grey.shade700,
+                                        color: isMiddleC ? Colors.green.shade700 : Colors.grey.shade700,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -300,20 +392,13 @@ class _PianoWidgetState extends State<PianoWidget> {
                     ),
                     ...List.generate(allKeys.length, (index) {
                       String? blackKey = _getBlackKeyForPosition(index);
-
-                      if (blackKey == null) {
-                        return const SizedBox.shrink();
-                      }
+                      if (blackKey == null) return const SizedBox.shrink();
 
                       bool isPressed = _pressedKeys.contains(blackKey);
-                      bool isHighlighted =
-                          widget.highlightedKeys?.contains(blackKey) ?? false;
+                      bool isHighlighted = widget.highlightedKeys?.contains(blackKey) ?? false;
 
                       return Positioned(
-                        left: (index * (_currentKeyWidth + 2)) +
-                            _currentKeyWidth +
-                            1 -
-                            (_currentKeyWidth * 0.25),
+                        left: (index * (_currentKeyWidth + 2)) + _currentKeyWidth + 1 - (_currentKeyWidth * 0.25),
                         child: GestureDetector(
                           onTapDown: (_) => _onKeyPressed(blackKey),
                           onTapUp: (_) => _onKeyReleased(blackKey),
@@ -328,10 +413,8 @@ class _PianoWidgetState extends State<PianoWidget> {
                                       ? Colors.yellow.shade400
                                       : Colors.black,
                               borderRadius: BorderRadius.only(
-                                bottomLeft:
-                                    Radius.circular(_currentKeyWidth * 0.1),
-                                bottomRight:
-                                    Radius.circular(_currentKeyWidth * 0.1),
+                                bottomLeft: Radius.circular(_currentKeyWidth * 0.1),
+                                bottomRight: Radius.circular(_currentKeyWidth * 0.1),
                               ),
                               boxShadow: [
                                 BoxShadow(
@@ -390,9 +473,7 @@ class _PianoWidgetState extends State<PianoWidget> {
       ),
     );
 
-    return Column(
-      children: children,
-    );
+    return Column(children: children);
   }
 
   String? _getBlackKeyForPosition(int whiteKeyIndex) {
@@ -410,73 +491,8 @@ class _PianoWidgetState extends State<PianoWidget> {
     }
     return null;
   }
-
-  void _onKeyPressed(String note) {
-    setState(() {
-      _pressedKeys.add(note);
-    });
-    widget.onNotePressed?.call(note);
-    _playNote(note);
-  }
-
-  Future<void> _reduceVolume(String note) async {
-    if (!widget.enableAudio) return;
-
-    _fadeOutTasks[note] = true;
-
-    try {
-      final keysToReduce =
-          _audioPlayers.keys.where((key) => key.startsWith(note)).toList();
-
-      for (final key in keysToReduce) {
-        final audioPlayer = _audioPlayers[key];
-        if (audioPlayer != null && audioPlayer.state == PlayerState.playing) {
-          _fadeOutAudioInstance(audioPlayer, key);
-        }
-      }
-    } catch (e) {
-      debugPrint('Error reducing volume for note $note: $e');
-    }
-  }
-
-  Future<void> _fadeOutAudioInstance(
-      AudioPlayer audioPlayer, String key) async {
-    try {
-      const fadeDuration = Duration(milliseconds: 1000);
-      const steps = 20;
-      final stepDuration = fadeDuration.inMilliseconds ~/ steps;
-      const volumeStep = 1.0 / steps;
-
-      for (int i = 0; i < steps; i++) {
-        final noteName = key.split('_')[0];
-        if (_fadeOutTasks[noteName] == false) {
-          break;
-        }
-
-        await Future.delayed(Duration(milliseconds: stepDuration));
-        final newVolume = 1.0 - (volumeStep * (i + 1));
-        if (newVolume > 0) {
-          await audioPlayer.setVolume(newVolume);
-        } else {
-          await audioPlayer.stop();
-          break;
-        }
-      }
-    } catch (e) {
-      debugPrint('Error fading out audio instance $key: $e');
-    }
-  }
-
-  void _onKeyReleased(String note) {
-    setState(() {
-      _pressedKeys.remove(note);
-    });
-    widget.onNoteReleased?.call(note);
-    _reduceVolume(note);
-  }
 }
 
-// Example usage widget
 class PianoExample extends StatefulWidget {
   const PianoExample({super.key});
 
@@ -491,21 +507,10 @@ class _PianoExampleState extends State<PianoExample> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('88-Key Piano Widget'),
-      ),
+      appBar: AppBar(title: const Text('88-Key Piano Widget')),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (currentNote != null)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Current Note: $currentNote',
-                style:
-                    const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-            ),
           PianoWidget(
             keyHeight: 150,
             keyWidth: 40,
@@ -545,16 +550,7 @@ class _PianoExampleState extends State<PianoExample> {
               ElevatedButton(
                 onPressed: () {
                   setState(() {
-                    highlightedKeys = [
-                      'A0',
-                      'A1',
-                      'A2',
-                      'A3',
-                      'A4',
-                      'A5',
-                      'A6',
-                      'A7'
-                    ];
+                    highlightedKeys = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'];
                   });
                 },
                 child: const Text('All A Notes'),
